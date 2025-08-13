@@ -35,6 +35,7 @@ Data concepts:
 Deliverables:
 - Spring Boot project (already scaffolded in this repo).
 - Base configuration for PostgreSQL, Redis, and profiles (dev/test/prod).
+- Docker and Docker Compose as the default way to run local components (PostgreSQL, Redis, and optionally the app). See "Containers: Docker & Docker Compose" below.
 
 Spring topics to read:
 - Spring Boot auto-configuration and configuration properties.
@@ -529,3 +530,91 @@ Note: Method signatures are indicative. Adjust types as you code.
 
 
 You’re ready to start. Use this roadmap as a living document—update it as your understanding grows and your requirements evolve.
+
+
+## Containers: Docker & Docker Compose (Local Dev)
+
+This project uses Docker and Docker Compose to manage local infrastructure components. Compose is the default way to run PostgreSQL and Redis for development. You can run the Spring Boot app locally (IDE or Maven) or add it as a Compose service once you have a Docker image.
+
+Prerequisites:
+- Docker Desktop (or a compatible Docker Engine) with Docker Compose v2 (docker compose ...).
+
+Example docker-compose.yml (place at repository root):
+
+```yaml
+version: "3.8"
+services:
+  postgres:
+    image: postgres:16
+    container_name: lb_postgres
+    environment:
+      POSTGRES_DB: leaderboard
+      POSTGRES_USER: leader
+      POSTGRES_PASSWORD: leaderpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leader -d leaderboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    container_name: lb_redis
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Optional: Add the Spring Boot app as a service once you have a Dockerfile/image
+  # app:
+  #   image: ghcr.io/your-org/spring-leaderboard:dev
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/leaderboard
+  #     SPRING_DATASOURCE_USERNAME: leader
+  #     SPRING_DATASOURCE_PASSWORD: leaderpass
+  #     SPRING_DATA_REDIS_HOST: redis
+  #     SPRING_DATA_REDIS_PORT: 6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   ports:
+  #     - "8080:8080"
+
+volumes:
+  pgdata:
+  redisdata:
+```
+
+Usage (PowerShell):
+- Start services: `docker compose up -d`
+- Check status: `docker compose ps`
+- Follow logs: `docker compose logs -f`
+- Stop services: `docker compose down`
+- Stop and remove volumes (reset data): `docker compose down -v`
+
+Connecting the app:
+- If you run the app locally (outside Compose), use localhost and exported env vars in PowerShell:
+  - `$env:SPRING_DATASOURCE_URL = "jdbc:postgresql://localhost:5432/leaderboard"`
+  - `$env:SPRING_DATASOURCE_USERNAME = "leader"`
+  - `$env:SPRING_DATASOURCE_PASSWORD = "leaderpass"`
+  - `$env:SPRING_DATA_REDIS_HOST = "localhost"`
+  - `$env:SPRING_DATA_REDIS_PORT = "6379"`
+  - Then run: `mvnw.cmd spring-boot:run` (or `mvnw.cmd -DskipTests package && java -jar target\\spring_leaderboard-*.jar`)
+- If you run the app inside Compose, use service names as hosts (postgres, redis) as shown in the commented app service above.
+
+Notes:
+- Tests can continue to use Testcontainers for isolated integration testing; Compose is primarily for running local services during development.
+- Do not use these dev credentials in production. For production, externalize secrets and configure different images/tags and persistence policies.
+- See Section "1) Project Setup & Bootstrapping" Deliverables for the official choice of Docker & Docker Compose as the default local orchestration.
